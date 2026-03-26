@@ -52,7 +52,7 @@ def min_distance_residue_ligand(residue, ligand) -> float:
 # ---------------------------------------------------------------------------
 
 def find_residues_in_cutoff(pdb_file: str, ligand_resname: str,
-                             chain_id=None, cutoff: float = 8.0):
+                             chain_id=None, cutoff: float = 8.0, debug: bool = False):
     """
     Percorre o PDB e retorna lista de (distância, label_formatado)
     para todos os resíduos dentro do raio de corte.
@@ -88,6 +88,7 @@ def find_residues_in_cutoff(pdb_file: str, ligand_resname: str,
 
     # --- Calcular distâncias ---
     results = []
+    all_distances = []  # Para debug
 
     for chain in model.get_chains():
         if chain_id and chain.get_id() != chain_id:
@@ -100,11 +101,25 @@ def find_residues_in_cutoff(pdb_file: str, ligand_resname: str,
                 continue
 
             dist = min_distance_residue_ligand(residue, ligand)
+            label = format_resname_4digits(residue.get_resname(), resid)
+            all_distances.append((dist, label))
+            
             if dist is not None and dist <= cutoff:
-                label = format_resname_4digits(residue.get_resname(), resid)
                 results.append((dist, label))
 
     results.sort(key=lambda x: x[0])
+    
+    # Debug: mostrar as distâncias mais próximas mesmo que acima do cutoff
+    if debug and not results:
+        all_distances.sort(key=lambda x: x[0])
+        print(f"\n[DEBUG] Nenhum resíduo dentro de {cutoff} Å")
+        print(f"[DEBUG] Top 10 resíduos mais próximos:")
+        for dist, label in all_distances[:10]:
+            print(f"[DEBUG]   {label}: {dist:.2f} Å")
+        if all_distances:
+            print(f"[DEBUG] Distância mínima encontrada: {all_distances[0][0]:.2f} Å")
+            print(f"[DEBUG] Sugestão: aumente o cutoff para pelo menos {all_distances[0][0] + 2:.1f} Å")
+    
     return results
 
 

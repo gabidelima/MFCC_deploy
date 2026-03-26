@@ -96,8 +96,8 @@ with st.sidebar:
         help="Nome do resíduo HETATM no PDB").strip().upper()
     col1, col2 = st.columns(2)
     with col1:
-        chain = st.text_input("Cadeia", value="A", max_chars=2,
-            help="Deixe vazio = todas as cadeias").strip().upper() or None
+        chain = st.text_input("Cadeia", value="", max_chars=2,
+            help="Deixe VAZIO para aceitar todas as cadeias. A proteína pode estar em cadeia diferente do ligante!").strip().upper() or None
     with col2:
         carga_ligante = st.number_input("Carga", value=0, min_value=-10, max_value=10, step=1)
     multiplicidade = st.number_input("Multiplicidade", value=1, min_value=1, max_value=5, step=1)
@@ -221,23 +221,29 @@ if st.button("▶ Executar MFCC Pipeline", type="primary"):
             progress.progress(20, text="Calculando distâncias…")
             from fragment_by_distance import find_residues_in_cutoff, write_outputs as write_frag
             try:
-                results_dist = find_residues_in_cutoff(str(pdb_path), ligand_resname, chain, float(cutoff))
+                results_dist = find_residues_in_cutoff(str(pdb_path), ligand_resname, chain, float(cutoff), debug=False)
             except ValueError as e:
                 log(f"\n❌ ERRO: {str(e)}")
                 st.error(str(e))
                 st.stop()
             
             if not results_dist:
+                # Tenta novamente com debug=True para mostrar distâncias
+                log("\n[DEBUG] Ativando modo debug para mostrar distâncias…")
+                try:
+                    find_residues_in_cutoff(str(pdb_path), ligand_resname, chain, float(cutoff), debug=True)
+                except ValueError:
+                    pass
+                
                 error_msg = f"❌ Erro: Nenhum resíduo dentro de {cutoff} Å encontrado.\n\n"
                 error_msg += "Possíveis causas:\n"
-                error_msg += f"• Ligante '{ligand_resname}' não encontrado no PDB\n"
-                error_msg += "• Cutoff muito pequeno para a estrutura\n"
-                error_msg += "• Cadeia especificada incorretamente\n\n"
-                error_msg += "💡 Soluções:\n"
-                error_msg += "1. Aumente o cutoff (ex: 8.0 ou 10.0 Å)\n"
-                error_msg += "2. Verifique o código 3-letras do ligante no PDB\n"
-                error_msg += "3. Deixe a cadeia vazia para aceitar todas\n"
-                error_msg += "4. Confira as mensagens de debug acima"
+                error_msg += "1. ⚠️ **Ligante e proteína em cadeias diferentes**\n"
+                error_msg += "   → Deixe a 'Cadeia' VAZIA para aceitar todas\n"
+                error_msg += "2. Cutoff muito pequeno (veja distâncias no log acima)\n"
+                error_msg += "3. Código 3-letras do ligante incorreto\n\n"
+                error_msg += "💡 Dica: Se você selecionou uma cadeia específica,\n"
+                error_msg += "    **deixe em branco** — a proteína pode estar em\n"
+                error_msg += "    cadeia diferente do ligante!"
                 st.error(error_msg)
                 st.stop()
             
