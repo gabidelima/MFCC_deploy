@@ -52,17 +52,6 @@ def parse_pdb_ligand(pdb_file: str, ligand_resname: str, chain: Optional[str] = 
     return {"ligand_atoms": ligand_atoms, "residues": residues}
 
 
-def centroid(coords: list) -> tuple:
-    """Calcula centróide de uma lista de coordenadas."""
-    n = len(coords)
-    if n == 0:
-        return (0, 0, 0)
-    x = sum(c[0] for c in coords) / n
-    y = sum(c[1] for c in coords) / n
-    z = sum(c[2] for c in coords) / n
-    return (x, y, z)
-
-
 def distance_3d(p1: tuple, p2: tuple) -> float:
     """Distância euclidiana entre dois pontos 3D."""
     return math.sqrt((p1[0] - p2[0])**2 + (p1[1] - p2[1])**2 + (p1[2] - p2[2])**2)
@@ -76,6 +65,7 @@ def find_residues_in_cutoff(
 ) -> list:
     """
     Encontra resíduos dentro de cutoff Ångströms do ligante.
+    Usa a DISTÂNCIA MÍNIMA entre qualquer átomo do resíduo e qualquer átomo do ligante.
     
     Retorna:
         lista de tuplas (distância, resíduo_id), ordenada por distância
@@ -85,15 +75,27 @@ def find_residues_in_cutoff(
     if not data["ligand_atoms"]:
         return []
     
-    ligand_centroid = centroid(data["ligand_atoms"])
     results = []
     
-    for res_id, coords in data["residues"].items():
-        res_centroid = centroid(coords)
-        dist = distance_3d(ligand_centroid, res_centroid)
+    # Para cada resíduo, calcula a distância mínima até o ligante
+    for res_id, res_coords in data["residues"].items():
+        min_distance = float("inf")
         
-        if dist <= cutoff:
-            results.append((dist, res_id))
+        # Testa todos os pares átomo-ligante
+        for atom_lig in data["ligand_atoms"]:
+            for atom_res in res_coords:
+                dist = distance_3d(atom_lig, atom_res)
+                if dist < min_distance:
+                    min_distance = dist
+                
+                # Early exit se já passou o cutoff
+                if min_distance > cutoff:
+                    break
+            if min_distance > cutoff:
+                break
+        
+        if min_distance <= cutoff:
+            results.append((min_distance, res_id))
     
     # Ordenar por distância
     results.sort(key=lambda x: x[0])
