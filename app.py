@@ -219,9 +219,19 @@ if st.button("▶ Executar MFCC Pipeline", type="primary"):
             log(f"[2/3] Selecionando resíduos (cutoff={cutoff} Å) …")
             progress.progress(20, text="Calculando distâncias…")
             from fragment_by_distance import find_residues_in_cutoff, write_outputs as write_frag
-            results_dist = find_residues_in_cutoff(str(pdb_path), ligand_resname, chain, cutoff)
+            results_dist = find_residues_in_cutoff(str(pdb_path), ligand_resname, chain, cutoff, log_fn=log)
             if not results_dist:
-                st.error(f"Nenhum resíduo dentro de {cutoff} Å. Tente aumentar o cutoff.")
+                error_msg = f"❌ Erro: Nenhum resíduo dentro de {cutoff} Å encontrado.\n\n"
+                error_msg += "Possíveis causas:\n"
+                error_msg += f"• Ligante '{ligand_resname}' não encontrado no PDB\n"
+                error_msg += "• Cutoff muito pequeno para a estrutura\n"
+                error_msg += "• Cadeia especificada incorretamente\n\n"
+                error_msg += "💡 Soluções:\n"
+                error_msg += "1. Aumente o cutoff (ex: 8.0 ou 10.0 Å)\n"
+                error_msg += "2. Verifique o código 3-letras do ligante no PDB\n"
+                error_msg += "3. Deixe a cadeia vazia para aceitar todas\n"
+                error_msg += "4. Confira as mensagens de debug acima"
+                st.error(error_msg)
                 st.stop()
             csv_path, mfcc_path = write_frag(results_dist, tmp)
             mr_text = mfcc_path.read_text()
