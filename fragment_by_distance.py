@@ -52,10 +52,12 @@ def min_distance_residue_ligand(residue, ligand) -> float:
 # ---------------------------------------------------------------------------
 
 def find_residues_in_cutoff(pdb_file: str, ligand_resname: str,
-                             chain_id=None, cutoff: float = 8.0, debug: bool = False):
+                             chain_id=None, cutoff: float = 8.0):
     """
     Percorre o PDB e retorna lista de (distância, label_formatado)
     para todos os resíduos dentro do raio de corte.
+    
+    Retorna tuple: (results, ligand_resid)
     """
     parser = PDBParser(QUIET=True)
     structure = parser.get_structure("mol", pdb_file)
@@ -63,6 +65,7 @@ def find_residues_in_cutoff(pdb_file: str, ligand_resname: str,
 
     # --- Encontrar o ligante ---
     ligand = None
+    ligand_resid = None
     all_hetatm = []
     
     for residue in model.get_residues():
@@ -72,6 +75,7 @@ def find_residues_in_cutoff(pdb_file: str, ligand_resname: str,
             all_hetatm.append(resname)
             if resname == ligand_resname:
                 ligand = residue
+                ligand_resid = residue.get_id()[1]
                 break
 
     if ligand is None:
@@ -84,7 +88,7 @@ def find_residues_in_cutoff(pdb_file: str, ligand_resname: str,
 
     print(f"[INFO] Ligante encontrado: {ligand.get_resname()} "
           f"(chain {ligand.get_parent().get_id()}, "
-          f"resid {ligand.get_id()[1]})")
+          f"resid {ligand_resid})")
 
     # --- Calcular distâncias ---
     results = []
@@ -109,8 +113,8 @@ def find_residues_in_cutoff(pdb_file: str, ligand_resname: str,
 
     results.sort(key=lambda x: x[0])
     
-    # Debug: mostrar as distâncias mais próximas mesmo que acima do cutoff
-    if debug and not results:
+    # Debug automático: mostrar as distâncias mais próximas se nada for encontrado
+    if not results and all_distances:
         all_distances.sort(key=lambda x: x[0])
         print(f"\n[DEBUG] Nenhum resíduo dentro de {cutoff} Å")
         print(f"[DEBUG] Top 10 resíduos mais próximos:")
@@ -120,7 +124,7 @@ def find_residues_in_cutoff(pdb_file: str, ligand_resname: str,
             print(f"[DEBUG] Distância mínima encontrada: {all_distances[0][0]:.2f} Å")
             print(f"[DEBUG] Sugestão: aumente o cutoff para pelo menos {all_distances[0][0] + 2:.1f} Å")
     
-    return results
+    return results, ligand_resid
 
 
 def write_outputs(results, output_dir: Path):

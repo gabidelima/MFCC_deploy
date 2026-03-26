@@ -50,28 +50,34 @@ METHODS = ["B97D","B3LYP","M062X","wB97XD","PBE0","CAM-B3LYP","B3PW91","TPSS","B
 BASIS_SETS = ["6-311+G(d,p)","6-31G(d)","6-31+G(d,p)","6-311G(d,p)","6-311++G(d,p)",
               "cc-pVDZ","cc-pVTZ","aug-cc-pVDZ","def2-SVP","def2-TZVP"]
 
-def build_zip(gjf_dict, db_path=None, csv_path=None):
+def build_zip(gjf_dict, db_text=None, csv_text=None, ligand_resname="", ligand_resid=""):
     """
     Cria ZIP com estrutura:
-    - gjf/ (pasta com todos os .gjf)
+    - LIGANTE_NUMERO/ (pasta com todos os .gjf)
     - DATABASE.txt (na raiz)
     - residuos_raio.csv (na raiz)
+    
+    Exemplo: GW11197/
     """
+    # Criar nome da pasta: LIGANTE + RESID (ex: GW11197)
+    if ligand_resid:
+        folder_name = f"{ligand_resname}{ligand_resid}"
+    else:
+        folder_name = "gjf"
+    
     buf = io.BytesIO()
     with zipfile.ZipFile(buf, "w", zipfile.ZIP_DEFLATED) as zf:
-        # Adicionar GJFs em pasta gjf/
+        # Adicionar GJFs em pasta nomeada
         for fname, content in sorted(gjf_dict.items()):
-            zf.writestr(f"gjf/{fname}", content)
+            zf.writestr(f"{folder_name}/{fname}", content)
         
         # Adicionar DATABASE.txt na raiz
-        if db_path and Path(db_path).exists():
-            db_content = Path(db_path).read_text()
-            zf.writestr("DATABASE.txt", db_content)
+        if db_text:
+            zf.writestr("DATABASE.txt", db_text)
         
         # Adicionar residuos_raio.csv na raiz
-        if csv_path and Path(csv_path).exists():
-            csv_content = Path(csv_path).read_text()
-            zf.writestr("residuos_raio.csv", csv_content)
+        if csv_text:
+            zf.writestr("residuos_raio.csv", csv_text)
     
     return buf.getvalue()
 
@@ -221,25 +227,18 @@ if st.button("▶ Executar MFCC Pipeline", type="primary"):
             progress.progress(20, text="Calculando distâncias…")
             from fragment_by_distance import find_residues_in_cutoff, write_outputs as write_frag
             try:
-                results_dist = find_residues_in_cutoff(str(pdb_path), ligand_resname, chain, float(cutoff), debug=False)
+                results_dist, ligand_resid = find_residues_in_cutoff(str(pdb_path), ligand_resname, chain, float(cutoff))
             except ValueError as e:
                 log(f"\n❌ ERRO: {str(e)}")
                 st.error(str(e))
                 st.stop()
             
             if not results_dist:
-                # Tenta novamente com debug=True para mostrar distâncias
-                log("\n[DEBUG] Ativando modo debug para mostrar distâncias…")
-                try:
-                    find_residues_in_cutoff(str(pdb_path), ligand_resname, chain, float(cutoff), debug=True)
-                except ValueError:
-                    pass
-                
                 error_msg = f"❌ Erro: Nenhum resíduo dentro de {cutoff} Å encontrado.\n\n"
                 error_msg += "Possíveis causas:\n"
                 error_msg += "1. ⚠️ **Ligante e proteína em cadeias diferentes**\n"
                 error_msg += "   → Deixe a 'Cadeia' VAZIA para aceitar todas\n"
-                error_msg += "2. Cutoff muito pequeno (veja distâncias no log acima)\n"
+                error_msg += "2. Cutoff muito pequeno para a estrutura\n"
                 error_msg += "3. Código 3-letras do ligante incorreto\n\n"
                 error_msg += "💡 Dica: Se você selecionou uma cadeia específica,\n"
                 error_msg += "    **deixe em branco** — a proteína pode estar em\n"
@@ -248,6 +247,7 @@ if st.button("▶ Executar MFCC Pipeline", type="primary"):
                 st.stop()
             
             csv_path, mfcc_path = write_frag(results_dist, tmp)
+            csv_text = csv_path.read_text()
             mr_text = mfcc_path.read_text()
             targets = [r.strip() for r in mr_text.splitlines() if r.strip()]
             log(f"    {len(targets)} resíduos selecionados")
@@ -290,7 +290,7 @@ if st.button("▶ Executar MFCC Pipeline", type="primary"):
 
         st.download_button(
             label=f"⬇ Baixar todos os GJFs ({len(gjf_dict)} arquivos) — ZIP",
-            data=build_zip(gjf_dict, db_path, csv_path),
+            data=build_zip(gjf_dict, db_text, csv_text, ligand_resname, ligand_resid),
             file_name=f"{ligand_resname}_MFCC_gjf.zip",
             mime="application/zip",
         )

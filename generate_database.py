@@ -11,6 +11,11 @@ from typing import Optional
 import re
 
 
+def format_resname_4digits(resname: str, resid: int) -> str:
+    """Formata RES + número com exatamente 4 dígitos: ALA0027, GLU0104."""
+    return f"{resname.strip()}{resid:04d}"
+
+
 def parse_pdb(pdb_file: str, chain: Optional[str] = None, ligand_resname: str = "LIG") -> tuple:
     """
     Parse um arquivo PDB e extrai informações de átomos.
@@ -48,7 +53,7 @@ def parse_pdb(pdb_file: str, chain: Optional[str] = None, ligand_resname: str = 
         if record == "HETATM" and resname == ligand_resname:
             res_id = None  # Ligante
         else:
-            res_id = f"{resname}{res_seq}"
+            res_id = format_resname_4digits(resname, res_seq)
             if record == "ATOM":
                 res_set.add(res_id)
         
