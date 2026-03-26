@@ -216,10 +216,17 @@ if st.button("▶ Executar MFCC Pipeline", type="primary"):
             log(f"    {n_lig} átomos ligante | {n_prot} átomos proteicos | {len(res_list)} resíduos")
 
             # Etapa 2 — Fragmentação
+            # Etapa 2 — Fragmentação
             log(f"[2/3] Selecionando resíduos (cutoff={cutoff} Å) …")
             progress.progress(20, text="Calculando distâncias…")
             from fragment_by_distance import find_residues_in_cutoff, write_outputs as write_frag
-            results_dist = find_residues_in_cutoff(str(pdb_path), ligand_resname, chain, cutoff, log_fn=log)
+            try:
+                results_dist = find_residues_in_cutoff(str(pdb_path), ligand_resname, chain, float(cutoff))
+            except ValueError as e:
+                log(f"\n❌ ERRO: {str(e)}")
+                st.error(str(e))
+                st.stop()
+            
             if not results_dist:
                 error_msg = f"❌ Erro: Nenhum resíduo dentro de {cutoff} Å encontrado.\n\n"
                 error_msg += "Possíveis causas:\n"
@@ -233,6 +240,7 @@ if st.button("▶ Executar MFCC Pipeline", type="primary"):
                 error_msg += "4. Confira as mensagens de debug acima"
                 st.error(error_msg)
                 st.stop()
+            
             csv_path, mfcc_path = write_frag(results_dist, tmp)
             mr_text = mfcc_path.read_text()
             targets = [r.strip() for r in mr_text.splitlines() if r.strip()]

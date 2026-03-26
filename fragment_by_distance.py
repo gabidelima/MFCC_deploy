@@ -2,157 +2,128 @@
 """
 fragment_by_distance.py
 =======================
-Encontra resíduos dentro de um raio de corte (cutoff) a partir do ligante.
-Usa a distância euclidiana entre centros de massa ou átomos representativos.
+Seleciona resíduos proteicos dentro de um raio de corte ao redor do ligante
+e gera mfcc_residuos.txt com os nomes formatados (4 dígitos).
+
+Uso:
+    python fragment_by_distance.py --pdb proteina.pdb --ligand AGO --cutoff 8.0
+
+Saída:
+    residuos_raio.csv   — tabela distância × resíduo (para conferência)
+    mfcc_residuos.txt   — resíduos selecionados, nomes com 4 dígitos
+
+Dependências:
+    pip install biopython
 """
 
+import csv
+import sys
 from pathlib import Path
-from typing import Optional
-import math
+
+from Bio.PDB import PDBParser
+from Bio.PDB.Polypeptide import is_aa
 
 
-def parse_pdb_ligand(pdb_file: str, ligand_resname: str, chain: Optional[str] = None) -> dict:
+# ---------------------------------------------------------------------------
+# Funções auxiliares
+# ---------------------------------------------------------------------------
+
+def format_resname_4digits(resname: str, resid: int) -> str:
+    """Formata RES + número com exatamente 4 dígitos: ALA0027, GLU0104."""
+    return f"{resname.strip()}{resid:04d}"
+
+
+def min_distance_residue_ligand(residue, ligand) -> float:
     """
-    Extrai coordenadas de todos os átomos do ligante.
-    Retorna: {"ligand_atoms": [(x, y, z), ...], "residues": {res_id: [(x,y,z), ...]}}
+    Calcula a menor distância átomo-a-átomo entre um resíduo proteico
+    e o ligante.
     """
-    pdb_lines = Path(pdb_file).read_text().splitlines()
+    min_dist = None
+    for lig_atom in ligand.get_atoms():
+        for prot_atom in residue.get_atoms():
+            d = prot_atom - lig_atom
+            if min_dist is None or d < min_dist:
+                min_dist = d
+    return min_dist
+
+
+# ---------------------------------------------------------------------------
+# Lógica principal
+# ---------------------------------------------------------------------------
+
+def find_residues_in_cutoff(pdb_file: str, ligand_resname: str,
+                             chain_id=None, cutoff: float = 8.0):
+    """
+    Percorre o PDB e retorna lista de (distância, label_formatado)
+    para todos os resíduos dentro do raio de corte.
+    """
+    parser = PDBParser(QUIET=True)
+    structure = parser.get_structure("mol", pdb_file)
+    model = structure[0]
+
+    # --- Encontrar o ligante ---
+    ligand = None
+    all_hetatm = []
     
-    ligand_atoms = []
-    residues = {}
-    all_hetatm = set()  # Para debug
-    
-    for line in pdb_lines:
-        if not line.startswith(("ATOM", "HETATM")):
-            continue
-        
-        record = line[0:6].strip()
-        atom_name = line[12:16].strip()
-        resname = line[17:20].strip()
-        chain_id = line[21].strip()
-        
-        # Coletar todos os HETATM para debug
-        if record == "HETATM":
-            all_hetatm.add(resname)
-        
-        try:
-            res_seq = int(line[22:26].strip())
-            x = float(line[30:38].strip())
-            y = float(line[38:46].strip())
-            z = float(line[46:54].strip())
-        except (ValueError, IndexError):
-            continue
-        
-        # Filtrar por cadeia (filtro suave: se chain não é fornecido, aceita tudo)
-        if chain and chain_id != chain:
-            continue
-        
-        # Ligante: procura QUALQUER HETATM (não apenas o especificado)
-        # Se nenhum HETATM for encontrado com o nome exato, lista todas as opções
-        if record == "HETATM":
+    for residue in model.get_residues():
+        het, _, _ = residue.get_id()
+        resname = residue.get_resname().strip()
+        if het.strip():  # É um HETATM
+            all_hetatm.append(resname)
             if resname == ligand_resname:
-                ligand_atoms.append((x, y, z))
-        
-        # Proteína (ATOM records)
-        elif record == "ATOM":
-            res_id = f"{resname}{res_seq}"
-            if res_id not in residues:
-                residues[res_id] = []
-            residues[res_id].append((x, y, z))
-    
-    return {
-        "ligand_atoms": ligand_atoms,
-        "residues": residues,
-        "all_hetatm": list(all_hetatm),  # Para debug
-    }
-
-
-def distance_3d(p1: tuple, p2: tuple) -> float:
-    """Distância euclidiana entre dois pontos 3D."""
-    return math.sqrt((p1[0] - p2[0])**2 + (p1[1] - p2[1])**2 + (p1[2] - p2[2])**2)
-
-
-def find_residues_in_cutoff(
-    pdb_file: str,
-    ligand_resname: str,
-    chain: Optional[str] = None,
-    cutoff: float = 8.0,
-    log_fn = None  # Função de logging opcional
-) -> list:
-    """
-    Encontra resíduos dentro de cutoff Ångströms do ligante.
-    Usa a DISTÂNCIA MÍNIMA entre qualquer átomo do resíduo e qualquer átomo do ligante.
-    
-    Retorna:
-        lista de tuplas (distância, resíduo_id), ordenada por distância
-    """
-    data = parse_pdb_ligand(pdb_file, ligand_resname, chain)
-    
-    # Debug: verificar se o ligante foi encontrado
-    if not data["ligand_atoms"]:
-        msg = f"\n⚠️ AVISO: Nenhum átomo do ligante '{ligand_resname}' encontrado!"
-        if data["all_hetatm"]:
-            msg += f"\n   HETATM disponíveis no PDB: {', '.join(sorted(data['all_hetatm']))}"
-            msg += f"\n   Verifique se '{ligand_resname}' está correto."
-        if log_fn:
-            log_fn(msg)
-        return []
-    
-    if log_fn:
-        log_fn(f"[DEBUG] Ligante encontrado: {len(data['ligand_atoms'])} átomos")
-        log_fn(f"[DEBUG] Proteína: {len(data['residues'])} resíduos únicos")
-    
-    results = []
-    
-    # Para cada resíduo, calcula a distância mínima até o ligante
-    for res_id, res_coords in data["residues"].items():
-        min_distance = float("inf")
-        
-        # Testa todos os pares átomo-ligante
-        for atom_lig in data["ligand_atoms"]:
-            for atom_res in res_coords:
-                dist = distance_3d(atom_lig, atom_res)
-                if dist < min_distance:
-                    min_distance = dist
-                
-                # Early exit se já passou o cutoff
-                if min_distance > cutoff:
-                    break
-            if min_distance > cutoff:
+                ligand = residue
                 break
-        
-        if min_distance <= cutoff:
-            results.append((min_distance, res_id))
-    
-    # Ordenar por distância
+
+    if ligand is None:
+        error_msg = f"⚠️ Ligante '{ligand_resname}' não encontrado no PDB.\n"
+        if all_hetatm:
+            unique_hetatm = sorted(set(all_hetatm))
+            error_msg += f"   HETATM disponíveis: {', '.join(unique_hetatm)}\n"
+        error_msg += f"   Verifique o nome do resíduo (campo HETATM, coluna 18-20)."
+        raise ValueError(error_msg)
+
+    print(f"[INFO] Ligante encontrado: {ligand.get_resname()} "
+          f"(chain {ligand.get_parent().get_id()}, "
+          f"resid {ligand.get_id()[1]})")
+
+    # --- Calcular distâncias ---
+    results = []
+
+    for chain in model.get_chains():
+        if chain_id and chain.get_id() != chain_id:
+            continue
+        for residue in chain.get_residues():
+            het, resid, _ = residue.get_id()
+            if het.strip():   # pular HETATM (incluindo o próprio ligante)
+                continue
+            if not is_aa(residue, standard=False):
+                continue
+
+            dist = min_distance_residue_ligand(residue, ligand)
+            if dist is not None and dist <= cutoff:
+                label = format_resname_4digits(residue.get_resname(), resid)
+                results.append((dist, label))
+
     results.sort(key=lambda x: x[0])
-    
-    if log_fn and results:
-        log_fn(f"[DEBUG] Encontrados {len(results)} resíduos dentro de {cutoff} Å")
-    
     return results
 
 
-def write_outputs(results_dist: list, output_dir: Path) -> tuple:
-    """
-    Escreve residuos_raio.csv e mfcc_residuos.txt.
-    
-    Retorna:
-        (csv_path, residues_path)
-    """
+def write_outputs(results, output_dir: Path):
+    """Escreve residuos_raio.csv e mfcc_residuos.txt."""
     output_dir = Path(output_dir)
-    
-    # residuos_raio.csv: distância,resíduo
-    csv_lines = ["Distância (Å),Resíduo"]
-    for dist, res_id in results_dist:
-        csv_lines.append(f"{dist:.2f},{res_id}")
-    
-    csv_path = output_dir / "residuos_raio.csv"
-    csv_path.write_text("\n".join(csv_lines))
-    
-    # mfcc_residuos.txt: um resíduo por linha (sem distância)
-    residues = [res_id for _, res_id in results_dist]
-    mfcc_path = output_dir / "mfcc_residuos.txt"
-    mfcc_path.write_text("\n".join(residues))
-    
+    output_dir.mkdir(parents=True, exist_ok=True)
+
+    csv_path    = output_dir / "residuos_raio.csv"
+    mfcc_path   = output_dir / "mfcc_residuos.txt"
+
+    with open(csv_path, "w", newline="") as f:
+        writer = csv.writer(f)
+        writer.writerow(["Distância (Å)", "Resíduo"])
+        for dist, label in results:
+            writer.writerow([f"{dist:.4f}", label])
+
+    with open(mfcc_path, "w") as f:
+        for _, label in results:
+            f.write(label + "\n")
+
     return csv_path, mfcc_path
