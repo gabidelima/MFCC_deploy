@@ -50,11 +50,29 @@ METHODS = ["B97D","B3LYP","M062X","wB97XD","PBE0","CAM-B3LYP","B3PW91","TPSS","B
 BASIS_SETS = ["6-311+G(d,p)","6-31G(d)","6-31+G(d,p)","6-311G(d,p)","6-311++G(d,p)",
               "cc-pVDZ","cc-pVTZ","aug-cc-pVDZ","def2-SVP","def2-TZVP"]
 
-def build_zip(gjf_dict):
+def build_zip(gjf_dict, db_path=None, csv_path=None):
+    """
+    Cria ZIP com estrutura:
+    - gjf/ (pasta com todos os .gjf)
+    - DATABASE.txt (na raiz)
+    - residuos_raio.csv (na raiz)
+    """
     buf = io.BytesIO()
     with zipfile.ZipFile(buf, "w", zipfile.ZIP_DEFLATED) as zf:
+        # Adicionar GJFs em pasta gjf/
         for fname, content in sorted(gjf_dict.items()):
-            zf.writestr(fname, content)
+            zf.writestr(f"gjf/{fname}", content)
+        
+        # Adicionar DATABASE.txt na raiz
+        if db_path and Path(db_path).exists():
+            db_content = Path(db_path).read_text()
+            zf.writestr("DATABASE.txt", db_content)
+        
+        # Adicionar residuos_raio.csv na raiz
+        if csv_path and Path(csv_path).exists():
+            csv_content = Path(csv_path).read_text()
+            zf.writestr("residuos_raio.csv", csv_content)
+    
     return buf.getvalue()
 
 def pdb_stats(pdb_text):
@@ -205,7 +223,7 @@ if st.button("▶ Executar MFCC Pipeline", type="primary"):
             if not results_dist:
                 st.error(f"Nenhum resíduo dentro de {cutoff} Å. Tente aumentar o cutoff.")
                 st.stop()
-            _, mfcc_path = write_frag(results_dist, tmp)
+            csv_path, mfcc_path = write_frag(results_dist, tmp)
             mr_text = mfcc_path.read_text()
             targets = [r.strip() for r in mr_text.splitlines() if r.strip()]
             log(f"    {len(targets)} resíduos selecionados")
@@ -248,7 +266,7 @@ if st.button("▶ Executar MFCC Pipeline", type="primary"):
 
         st.download_button(
             label=f"⬇ Baixar todos os GJFs ({len(gjf_dict)} arquivos) — ZIP",
-            data=build_zip(gjf_dict),
+            data=build_zip(gjf_dict, db_path, csv_path),
             file_name=f"{ligand_resname}_MFCC_gjf.zip",
             mime="application/zip",
         )
